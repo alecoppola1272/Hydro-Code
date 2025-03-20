@@ -158,11 +158,12 @@ enddo
 close(20)
 
 open(20,file='mgas.dat',status='unknown')
-mgas(1)=rho(j)*4.188*r(1)**3 !!NO BCG
-mgasBCG(1)=rhoBCG(j)*4.188*r(1)**3 !! BCG
+ mgas(1)=rho(j)*4.188*r(1)**3 !!NO BCG
+!! mgasBCG(1)=rhoBCG(j)*4.188*r(1)**3 !! BCG iso
+mgasBCG_grad(1)=rhoBCG_grad(j)*4.188*r(1)**3
 do j=2,jmax
    mgas(j)=mgas(j-1)+rho(j-1)*vol(j) !! NO BCG
-   mgasBCG(j)=mgasBCG(j-1)+rhoBCG(j-1)*vol(j) !! BCG
+!! mgasBCG(j)=mgasBCG(j-1)+rhoBCG(j-1)*vol(j) !! BCG iso
    mgasBCG_grad(j)=mgasBCG_grad(j-1)+rhoBCG_grad(j-1)*vol(j) !! BCG
    write(20,1100)r(j)/cmkpc,mgas(j)/msol,mnfw(j)/msol
 enddo
@@ -176,8 +177,8 @@ print*,'fbari, fgas = ',real(fbar), real(fgas)
 
 open(20,file='barfrac.dat')
 do j=2,jmax-1
-   fbarr(j)=(mhern(j)+mgasBCG(j))/(mnfw(j)+mgasBCG(j)+mhern(j))
-   fgasr(j)=(mgasBCG(j))/(mnfw(j)+mgasBCG(j)+mhern(j))
+   fbarr(j)=(mhern(j)+mgasBCG_grad(j))/(mnfw(j)+mgasBCG_grad(j)+mhern(j))
+   fgasr(j)=(mgasBCG_grad(j))/(mnfw(j)+mgasBCG_grad(j)+mhern(j))
    write(20,1100)r(j)/cmkpc,fbarr(j),fgasr(j)
 enddo
 close(20)
@@ -240,7 +241,7 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 
 !! Here start the time integration (use FTCS method)
 
- print*,'dai ncycle'
+ print*,'number of ncycle'
  read(*,*)ncycle
  tend=tnow
 
@@ -251,7 +252,7 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
  lturb=15.*cmkpc  !! this is quite uncertain !!
  rscala=30.*cmkpc
 
- kappa=0.11*vturb*lturb !! costant Kappa
+ kappa=0.11*vturb*lturb!! costant Kappa
 
 !!do j=1,jmax    !! for variable kappa
 !!    kappa(j)=rhost(j)  !!0.333*vturb*lturb   !! constant !!
@@ -259,6 +260,7 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 !!    write(20,*)real(r(j)/cmkpc),kappa(j)
 !! enddo
  close(20)
+
 
       n=0
 1000  continue      !! here start the main time cycle
@@ -287,7 +289,7 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 !! (according to Rebusco et al. 2006)
 !! Use the FTCS scheme.
 
-!!      goto776
+ goto 776 !! ONLY DIFFUSION NO SOURCE TERM
 !! source step
 
  do j=2,jmax-1
@@ -301,11 +303,11 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 
       zfe(1)=zfe(2)
       zfe(jmax)=zfe(jmax-1)
-      rhofe(1)=rhofe(2)
-      rhofe(jmax)=rhofe(jmax-1)
+      rhofe(1)=rhoBCG_grad(1)*zfe(1)/1.4
+      rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 776   continue
 
-!!  goto777
+ !!  goto 777 !! DIFFUSION + SOURCE 
 !  diffusive step   !  check the Fe conservation !
 
  do j=2,jmax-1
@@ -329,8 +331,8 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 
       zfe(1)=zfe(2)
       zfe(jmax)=zfe(jmax-1)
-      rhofe(1)=rhofe(2)
-      rhofe(jmax)=rhofe(jmax-1)
+      rhofe(1)=rhoBCG_grad(1)*zfe(1)/1.4
+      rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 777   continue
 
       if (time.ge.tend) goto1001
@@ -350,6 +352,13 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
       do j=2,jmax
          amfe(j)=amfe(j-1)+rhofe(j-1)*vol(j)
       enddo
+
+      open(30,file='zfe_final.dat')
+		do j=1,jmax
+   		write(30,7000) r(j)/cmkpc,amfe(j)/msol,zfe(j)/zfesol
+		enddo
+      close(30)
+7000  format(3(1pe12.4))
 
       write(6,3002)amfe(jmax)/msol,amfeiniz(jmax)/msol,amfeobs(jmax)/msol
       write(6,3003)amfe(180)/msol,amfeiniz(180)/msol,amfeobs(180)/msol
