@@ -5,7 +5,8 @@ real*8, dimension(jmax) :: r(jmax),rr(jmax),vol(jmax),mnfw(jmax),&
         grvnfw(jmax),lnd(jmax),tem(jmax),tem2(jmax),mgas(jmax),&
         fbarr(jmax),fgasr(jmax),rhoBCG(jmax),lndBCG(jmax),mgasBCG(jmax),&
         grvnfwBCG(jmax),mgasBCG_grad(jmax),lndBCG_grad(jmax),rhoBCG_grad(jmax),&
-        rho_rebusco(jmax), tem_rebusco(jmax)
+        rho_rebusco(jmax), tem_rebusco(jmax), zfe_diffusion(jmax), rhofe_diffusion(jmax),&
+        gradzfe_diffusion(jmax)
 
 real*8 :: msol,mu,mp,rmin,rmax,mvir,rvir,mbcg,ahern,lsol,h,me,&
           ne0,alphast,alphasn,zfesn
@@ -25,10 +26,10 @@ guniv=6.6720e-8
 mp=1.67265e-24
 zfesol=1.8e-3
 zfesn=0.744/1.4
-snu=0.5
+snu=0.15
 
 tnow=13.7*1.e9*years
-time0=tnow-5.*1.e9*years
+time0=tnow-1.*1.e9*years
 time=time0      
 
 !    set the grid
@@ -196,11 +197,13 @@ zfeout=0.4*zfesol   !! this is the background abundance !!
 do j=1,jmax
    x=rr(j)/(80.*cmkpc)
    zfeobs(j)=zfesol*0.3*(1.4*1.15*((2.2+x**3))/(1+x**3)/1.15)  !Perseus!
-   zfe(j)=zfeobs(j) - zfeout !! subtract z_Fe,out  WITHOUT BACKGROUND
+   !!zfe(j)=zfeobs(j) - zfeout !! subtract z_Fe,out  WITHOUT BACKGROUND
+   zfe_diffusion(j)=zfeobs(j) - zfeout
    !!zfe(j)=zfeout 
-   !!zfe(j)=0.
+   zfe(j)=0.
    zfe(j)=max(zfe(j),0.)
    rhofe(j)=rhoBCG_grad(j)*zfe(j)/1.4   !! -Zfe_out
+   rhofe_diffusion(j)=rhoBCG_grad(j)*zfe_diffusion(j)/1.4
    rhofeobs(j)=rhoBCG_grad(j)*zfeobs(j)/1.4
 enddo
 
@@ -239,6 +242,10 @@ zfe(jmax)=zfe(jmax-1)
 rhofe(1)=rhoBCG_grad(1)*zfe(1)/1.4
 rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 
+zfe_diffusion(1)=zfe_diffusion(2)
+zfe_diffusion(jmax)=zfe_diffusion(jmax-1)
+rhofe_diffusion(1)=rhoBCG_grad(1)*zfe_diffusion(1)/1.4
+rhofe_diffusion(jmax)=rhoBCG_grad(jmax)*zfe_diffusion(jmax)/1.4
 !! Here start the time integration (use FTCS method)
 
  print*,'number of ncycle'
@@ -289,7 +296,7 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 !! (according to Rebusco et al. 2006)
 !! Use the FTCS scheme.
 
- goto 776 !! ONLY DIFFUSION NO SOURCE TERM
+!! goto 776 !! BLOCKED : ONLY DIFFUSION NO SOURCE TERM
 !! source step
 
  do j=2,jmax-1
@@ -307,7 +314,7 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
       rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 776   continue
 
- !!  goto 777 !! DIFFUSION + SOURCE 
+ goto 777 !!  BLOCKED : ONLY  SOURCE 
 !  diffusive step   !  check the Fe conservation !
 
  do j=2,jmax-1
@@ -315,6 +322,12 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
  enddo
  gradzfe(1)=0.        !! B.C. !!
  gradzfe(jmax)=0.
+
+  do j=2,jmax-1
+    gradzfe_diffusion(j)=(zfe_diffusion(j)-zfe_diffusion(j-1))/(rr(j)-rr(j-1))  !! dZ/dr centered at "j" !!
+ enddo
+ gradzfe_diffusion(1)=0.        !! B.C. !!
+ gradzfe_diffusion(jmax)=0.
 
  do j=2,jmax-1
     rhojp1=0.5*(rhoBCG_grad(j+1)+rhoBCG_grad(j))  !! rho centered at "j+1" !!
@@ -325,6 +338,17 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
              / (0.33333333*(r(j+1)**3-r(j)**3))
          zfe(j)=1.4*rhofe(j)/rhoBCG_grad(j)  !! update Z_Fe with the new rho_Fe !!
       enddo
+do j=2,jmax-1
+    rhojp1=0.5*(rhoBCG_grad(j+1)+rhoBCG_grad(j))  !! rho centered at "j+1" !!
+    rhoj=0.5*(rhoBCG_grad(j-1)+rhoBCG_grad(j))    !! rho centered at "j" !!
+    rhofe_diffusion(j)=rhofe_diffusion(j) &
+            + (dt/1.4)*(r(j+1)**2*kappa(j+1)*rhojp1*gradzfe_diffusion(j+1) &
+            -r(j)**2*kappa(j)*rhoj*gradzfe_diffusion(j))   &
+             / (0.33333333*(r(j+1)**3-r(j)**3))
+         zfe_diffusion(j)=1.4*rhofe_diffusion(j)/rhoBCG_grad(j)  !! update Z_Fe with the new rho_Fe !!
+      enddo
+
+
 2000  format(3(1pe12.4))
 
 !! set the boundary conditions (outflows)
@@ -355,10 +379,10 @@ rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
 
       open(30,file='zfe_final.dat')
 		do j=1,jmax
-   		write(30,7000) r(j)/cmkpc,amfe(j)/msol,zfe(j)/zfesol
+   		write(30,7000) r(j)/cmkpc,amfe(j)/msol,zfe(j)/zfesol,zfe_diffusion(j)/zfesol
 		enddo
       close(30)
-7000  format(3(1pe12.4))
+7000  format(4(1pe12.4))
 
       write(6,3002)amfe(jmax)/msol,amfeiniz(jmax)/msol,amfeobs(jmax)/msol
       write(6,3003)amfe(180)/msol,amfeiniz(180)/msol,amfeobs(180)/msol
