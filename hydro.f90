@@ -6,7 +6,7 @@ real*8, dimension(jmax) :: r(jmax),rr(jmax),vol(jmax),mnfw(jmax),&
         fbarr(jmax),fgasr(jmax),rhoBCG(jmax),lndBCG(jmax),mgasBCG(jmax),&
         grvnfwBCG(jmax),mgasBCG_grad(jmax),lndBCG_grad(jmax),rhoBCG_grad(jmax),&
         rho_rebusco(jmax), tem_rebusco(jmax), zfe_diffusion(jmax), rhofe_diffusion(jmax),&
-        gradzfe_diffusion(jmax)
+        gradzfe_diffusion(jmax),mfe(jmax)
 
 real*8 :: msol,mu,mp,rmin,rmax,mvir,rvir,mbcg,ahern,lsol,h,me,&
           ne0,alphast,alphasn,zfesn
@@ -29,7 +29,7 @@ zfesn=0.744/1.4
 snu=0.15
 
 tnow=13.7*1.e9*years
-time0=tnow-1.*1.e9*years
+time0=tnow-2.*1.e9*years
 time=time0      
 
 !    set the grid
@@ -213,20 +213,20 @@ enddo
 
  !! Calculate the initial excess of iron mass
 
-amfeiniz(1)=rhofe(1)*vol(1)
+amfeiniz(1)=rhofe_diffusion(1)*vol(1)
 amfeiniz(1)=rhofeobs(1)*vol(1)
 do j=2,jmax
-   amfeiniz(j)=amfeiniz(j-1)+rhofe(j-1)*vol(j)
+   amfeiniz(j)=amfeiniz(j-1)+rhofe_diffusion(j-1)*vol(j)
    amfeobs(j)=amfeobs(j-1)+rhofeobs(j-1)*vol(j)
 enddo
 
 open(20,file='zfe_initial.dat')
 do j=1,jmax
    write(20,1500)rr(j)/cmkpc,zfe(j)/zfesol,zfeobs(j)/zfesol, &
-                 r(j)/cmkpc,amfeiniz(j)/msol,amfeobs(j)/msol
+                 r(j)/cmkpc,amfeiniz(j)/msol,amfeobs(j)/msol, zfe_diffusion(j)/zfesol
 enddo
 close(20)
-1500 format(6(1pe12.4))
+1500 format(7(1pe12.4))
 
 open(20,file='initial.dat',status='unknown')
 do j=1,jmax
@@ -296,9 +296,8 @@ rhofe_diffusion(jmax)=rhoBCG_grad(jmax)*zfe_diffusion(jmax)/1.4
 !! (according to Rebusco et al. 2006)
 !! Use the FTCS scheme.
 
-!! goto 776 !! BLOCKED : ONLY DIFFUSION NO SOURCE TERM
+!! goto 776 !! BLOCKED FOR SOURCE TERM
 !! source step
-
  do j=2,jmax-1
 !!!    write(70,*)rhofe(j),dt*rhofedot(j)
 !!!    if(j.eq.5)print*,'azz ',dt,rhofe(j),dt*rhofedot(j),rhofedot(j)
@@ -312,9 +311,10 @@ rhofe_diffusion(jmax)=rhoBCG_grad(jmax)*zfe_diffusion(jmax)/1.4
       zfe(jmax)=zfe(jmax-1)
       rhofe(1)=rhoBCG_grad(1)*zfe(1)/1.4
       rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
+      
 776   continue
 
- goto 777 !!  BLOCKED : ONLY  SOURCE 
+ goto 777 !! BLOCK FOR DIFFUSION 
 !  diffusive step   !  check the Fe conservation !
 
  do j=2,jmax-1
@@ -338,6 +338,7 @@ rhofe_diffusion(jmax)=rhoBCG_grad(jmax)*zfe_diffusion(jmax)/1.4
              / (0.33333333*(r(j+1)**3-r(j)**3))
          zfe(j)=1.4*rhofe(j)/rhoBCG_grad(j)  !! update Z_Fe with the new rho_Fe !!
       enddo
+
 do j=2,jmax-1
     rhojp1=0.5*(rhoBCG_grad(j+1)+rhoBCG_grad(j))  !! rho centered at "j+1" !!
     rhoj=0.5*(rhoBCG_grad(j-1)+rhoBCG_grad(j))    !! rho centered at "j" !!
@@ -356,7 +357,12 @@ do j=2,jmax-1
       zfe(1)=zfe(2)
       zfe(jmax)=zfe(jmax-1)
       rhofe(1)=rhoBCG_grad(1)*zfe(1)/1.4
-      rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.4
+      rhofe(jmax)=rhoBCG_grad(jmax)*zfe(jmax)/1.
+      
+      zfe_diffusion(1)=zfe_diffusion(2)
+      zfe_diffusion(jmax)=zfe_diffusion(jmax-1)
+      rhofe_diffusion(1)=rhoBCG_grad(1)*zfe_diffusion(1)/1.4
+      rhofe_diffusion(jmax)=rhoBCG_grad(jmax)*zfe_diffusion(jmax)/1.4
 777   continue
 
       if (time.ge.tend) goto1001
@@ -372,25 +378,28 @@ do j=2,jmax-1
 
 !! calcola la massa di Fe al tempo finale
 
+     !! amfe(1)=rhofe_diffusion(1)*vol(1)  !! if DIFFUSION
       amfe(1)=rhofe(1)*vol(1)
       do j=2,jmax
-         amfe(j)=amfe(j-1)+rhofe(j-1)*vol(j)
+     !! amfe(j)=amfe(j-1)+rhofe_diffusion(j-1)*vol(j) !! if DIFFUSION
+       amfe(j)=amfe(j-1)+rhofe(j-1)*vol(j)
       enddo
 
       open(30,file='zfe_final.dat')
 		do j=1,jmax
-   		write(30,7000) r(j)/cmkpc,amfe(j)/msol,zfe(j)/zfesol,zfe_diffusion(j)/zfesol
+   		write(30,7000) r(j)/cmkpc,amfe(j)/msol,zfe(j)/zfesol,zfe_diffusion(j)/zfesol,mfe(j)/msol
 		enddo
       close(30)
-7000  format(4(1pe12.4))
+7000  format(5(1pe12.4))
 
       write(6,3002)amfe(jmax)/msol,amfeiniz(jmax)/msol,amfeobs(jmax)/msol
-      write(6,3003)amfe(180)/msol,amfeiniz(180)/msol,amfeobs(180)/msol
+      write(6,3003)amfe(180)/msol,amfeiniz(180)/msol,amfeobs(180)/msol !! <100kpc
+     !! write(6,3003)amfe(90)/msol,amfeiniz(90)/msol,amfeobs(180)/msol !! for the timescal
 3002  format('M_Fe(tot), M_Fein(tot) (Msol) = ',3(1pe12.4))
 3003  format('M_Fe(<100kpc), M_Fein(<100kpc) (Msol) = ',3(1pe12.4))
 
       print*,'TIME (Gyr) = ',time/3.156e16
-
+      print*, 'Me_Fe (TEO) = ', (5.e-22)*(1.e12)*2*(1.e9)*3.154e7!years
       open(21,file='diff.dat',status='unknown')
       do j=2,jmax
          write(21,3000)rr(j)/cmkpc,zfe(j)/zfesol
